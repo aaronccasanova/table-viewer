@@ -1,0 +1,8 @@
+{
+  "name": "table-viewer",
+  "version": "0.0.1",
+  "description": "A keyboard-navigable terminal table viewer",
+  "type": "module",
+  "main": "./index.js",
+  "bin": "./index.js"
+}
