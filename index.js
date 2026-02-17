@@ -37,12 +37,12 @@ if (!consoleTableOutputSplit.length) process.exit(0)
 const consoleTableOutputWidth = consoleTableOutputSplit[0].length
 const consoleTableOutputHeight = consoleTableOutputSplit.length
 
-// Hide cursor
-process.stdout.write('\x1B[?25l')
+// Enter alternate screen buffer and hide cursor
+process.stdout.write('\x1B[?1049h\x1B[?25l')
 
-// Restore cursor on exit
+// Restore cursor and leave alternate screen buffer on exit
 process.on('exit', () => {
-  process.stdout.write('\x1B[?25h')
+  process.stdout.write('\x1B[?25h\x1B[?1049l')
 })
 
 process.stdout.on('resize', () => {
