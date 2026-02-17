@@ -23,6 +23,13 @@ const consoleTableStartChars = {
   2: '├',
 }
 
+const scrollbarEndChars = {
+  up: '·',
+  down: '·',
+  left: '·',
+  right: '·',
+}
+
 const consoleTableOutput = captureConsoleTableOutput(tableData)
 
 const consoleTableOutputSplit = consoleTableOutput.split('\n')
@@ -251,11 +258,11 @@ function renderScrollbarX(needsScrollbarX, needsScrollbarY) {
     ) || 0
 
   return (
-    ' ' +
+    scrollbarEndChars.left +
     '-'.repeat(thumbPos) +
     '═'.repeat(thumbSize) +
     '-'.repeat(trackLength - thumbPos - thumbSize) +
-    ' ' +
+    scrollbarEndChars.right +
     (needsScrollbarY ? ' ' : '')
   )
 }
@@ -284,11 +291,11 @@ function renderScrollbarY(needsScrollbarX, needsScrollbarY) {
     ) || 0
 
   return (
-    ' ' +
+    scrollbarEndChars.up +
     '╎'.repeat(thumbPos) +
     '║'.repeat(thumbSize) +
     '╎'.repeat(trackLength - thumbPos - thumbSize) +
-    ' '
+    scrollbarEndChars.down
   )
 }
 
