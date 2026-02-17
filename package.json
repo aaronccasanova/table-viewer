@@ -4,5 +4,13 @@
   "description": "A keyboard-navigable terminal table viewer",
   "type": "module",
   "main": "./index.js",
-  "bin": "./index.js"
+  "bin": "./index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aaronccasanova/table-viewer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aaronccasanova/table-viewer/issues"
+  },
+  "homepage": "https://github.com/aaronccasanova/table-viewer"
 }

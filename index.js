@@ -236,7 +236,7 @@ function renderScrollbarX(needsScrollbarX, needsScrollbarY) {
   if (!needsScrollbarX) return ''
 
   const visibleWidth = consoleWidth - (needsScrollbarY ? 1 : 0)
-  const trackLength = visibleWidth - (needsScrollbarY ? 1 : 2)
+  const trackLength = visibleWidth - 2
 
   const thumbSize = Math.max(
     1,
@@ -255,7 +255,8 @@ function renderScrollbarX(needsScrollbarX, needsScrollbarY) {
     '-'.repeat(thumbPos) +
     '═'.repeat(thumbSize) +
     '-'.repeat(trackLength - thumbPos - thumbSize) +
-    ' '
+    ' ' +
+    (needsScrollbarY ? ' ' : '')
   )
 }
 
@@ -268,7 +269,7 @@ function renderScrollbarY(needsScrollbarX, needsScrollbarY) {
   if (!needsScrollbarY) return ''
 
   const visibleHeight = consoleHeight - (needsScrollbarX ? 1 : 0)
-  const trackLength = visibleHeight - (needsScrollbarX ? 1 : 2)
+  const trackLength = visibleHeight - 2
 
   const thumbSize = Math.max(
     1,
@@ -287,7 +288,7 @@ function renderScrollbarY(needsScrollbarX, needsScrollbarY) {
     '╎'.repeat(thumbPos) +
     '║'.repeat(thumbSize) +
     '╎'.repeat(trackLength - thumbPos - thumbSize) +
-    (needsScrollbarX ? '' : ' ')
+    ' '
   )
 }
 
