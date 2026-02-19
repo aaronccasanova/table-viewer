@@ -82,11 +82,16 @@ process.stdout.on('resize', () => {
 let pendingG = false
 
 ttyIn.on('keypress', (_str, key) => {
+  // Ignore mouse sequences that readline may emit as unrecognized keypresses
+  if (key.sequence?.startsWith('\x1b[<')) return
+
   // Ctrl+C or q to exit
   if ((key.ctrl && key.name === 'c') || key.name === 'q') {
     process.exit(0)
   }
 
+  const prevX = xOffset
+  const prevY = yOffset
   const { maxXOffset, maxYOffset, visibleHeight } = getViewportMetrics()
 
   // Handle gg (go to top)
@@ -94,7 +99,7 @@ ttyIn.on('keypress', (_str, key) => {
     if (pendingG) {
       pendingG = false
       yOffset = 0
-      render()
+      if (yOffset !== prevY) render()
       return
     }
 
@@ -107,7 +112,7 @@ ttyIn.on('keypress', (_str, key) => {
     pendingG = false
     yOffset = maxYOffset
 
-    render()
+    if (yOffset !== prevY) render()
     return
   }
 
@@ -171,8 +176,8 @@ ttyIn.on('keypress', (_str, key) => {
       xOffset = 0
       break
     // $ — scroll to rightmost
-    case '4': // shift+4 = $
-      if (key.shift) {
+    case undefined:
+      if (key.sequence === '$') {
         xOffset = maxXOffset
       } else {
         return
@@ -183,7 +188,7 @@ ttyIn.on('keypress', (_str, key) => {
       return
   }
 
-  render()
+  if (xOffset !== prevX || yOffset !== prevY) render()
 })
 
 ttyIn.on('data', (chunk) => {
@@ -217,7 +222,10 @@ function processMouseBuffer() {
       continue
     }
 
-    handleMouseButton(Number.parseInt(match[1], 10), match[4])
+    handleMouseButton(
+      Number.parseInt(match[1], 10),
+      /** @type {'M' | 'm'} */ (match[4]),
+    )
     mouseSequenceBuffer = mouseSequenceBuffer.slice(match[0].length)
   }
 }
@@ -235,32 +243,26 @@ function handleMouseButton(buttonCode, action) {
   const wheelButton = buttonCode & 3
   const isShiftPressed = (buttonCode & 4) !== 0
 
+  let moved = false
+
   switch (wheelButton) {
-    case 0:
-      if (isShiftPressed) {
-        moveRight(5)
-      } else {
-        moveUp(5)
-      }
+    case 0: // wheel up
+      moved = isShiftPressed ? moveRight(5) : moveUp(5)
       break
-    case 1:
-      if (isShiftPressed) {
-        moveLeft(5)
-      } else {
-        moveDown(5)
-      }
+    case 1: // wheel down
+      moved = isShiftPressed ? moveLeft(5) : moveDown(5)
       break
-    case 2:
-      moveRight(5)
+    case 2: // wheel right (native horizontal)
+      moved = moveRight(5)
       break
-    case 3:
-      moveLeft(5)
+    case 3: // wheel left (native horizontal)
+      moved = moveLeft(5)
       break
     default:
       return
   }
 
-  render()
+  if (moved) render()
 }
 
 function getViewportMetrics() {
@@ -281,26 +283,46 @@ function getViewportMetrics() {
   return { maxXOffset, maxYOffset, visibleHeight }
 }
 
-/** @param {number} amount */
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
 function moveUp(amount) {
+  const prev = yOffset
   yOffset = Math.max(0, yOffset - amount)
+  return yOffset !== prev
 }
 
-/** @param {number} amount */
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
 function moveDown(amount) {
+  const prev = yOffset
   const { maxYOffset } = getViewportMetrics()
   yOffset = Math.min(maxYOffset, yOffset + amount)
+  return yOffset !== prev
 }
 
-/** @param {number} amount */
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
 function moveLeft(amount) {
+  const prev = xOffset
   xOffset = Math.max(0, xOffset - amount)
+  return xOffset !== prev
 }
 
-/** @param {number} amount */
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
 function moveRight(amount) {
+  const prev = xOffset
   const { maxXOffset } = getViewportMetrics()
   xOffset = Math.min(maxXOffset, xOffset + amount)
+  return xOffset !== prev
 }
 
 function enableMouseReporting() {
