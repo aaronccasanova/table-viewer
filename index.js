@@ -217,25 +217,38 @@ function processMouseBuffer() {
       continue
     }
 
-    handleMouseButton(Number.parseInt(match[1], 10))
+    handleMouseButton(Number.parseInt(match[1], 10), match[4])
     mouseSequenceBuffer = mouseSequenceBuffer.slice(match[0].length)
   }
 }
 
 /**
  * @param {number} buttonCode
+ * @param {'M' | 'm'} action
  */
-function handleMouseButton(buttonCode) {
+function handleMouseButton(buttonCode, action) {
+  // Wheel events should be press-only. Ignore release-style reports to avoid jitter.
+  if (action !== 'M') return
+
   if ((buttonCode & 64) === 0) return
 
   const wheelButton = buttonCode & 3
+  const isShiftPressed = (buttonCode & 4) !== 0
 
   switch (wheelButton) {
     case 0:
-      moveUp(5)
+      if (isShiftPressed) {
+        moveRight(5)
+      } else {
+        moveUp(5)
+      }
       break
     case 1:
-      moveDown(5)
+      if (isShiftPressed) {
+        moveLeft(5)
+      } else {
+        moveDown(5)
+      }
       break
     case 2:
       moveRight(5)
