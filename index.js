@@ -38,6 +38,8 @@ let consoleWidth = process.stdout.columns
 let consoleHeight = process.stdout.rows
 let xOffset = 0
 let yOffset = 0
+let mouseSequenceBuffer = ''
+let didCleanupTerminal = false
 
 if (!consoleTableOutputSplit.length) process.exit(0)
 
@@ -46,10 +48,26 @@ const consoleTableOutputHeight = consoleTableOutputSplit.length
 
 // Enter alternate screen buffer and hide cursor
 process.stdout.write('\x1B[?1049h\x1B[?25l')
+enableMouseReporting()
 
 // Restore cursor and leave alternate screen buffer on exit
 process.on('exit', () => {
-  process.stdout.write('\x1B[?25h\x1B[?1049l')
+  cleanupTerminal()
+})
+
+process.on('SIGINT', () => {
+  process.exit(0)
+})
+
+process.on('unhandledRejection', (error) => {
+  cleanupTerminal()
+  throw error
+})
+
+process.on('uncaughtException', (error) => {
+  cleanupTerminal()
+  console.error(error)
+  process.exit(1)
 })
 
 process.stdout.on('resize', () => {
@@ -64,31 +82,24 @@ process.stdout.on('resize', () => {
 let pendingG = false
 
 ttyIn.on('keypress', (_str, key) => {
+  // Ignore mouse sequences that readline may emit as unrecognized keypresses
+  if (key.sequence?.startsWith('\x1b[<')) return
+
   // Ctrl+C or q to exit
   if ((key.ctrl && key.name === 'c') || key.name === 'q') {
     process.exit(0)
   }
 
-  const { needsScrollbarX, needsScrollbarY } = computeScrollbarVisibility()
-
-  const maxXOffset = Math.max(
-    0,
-    consoleTableOutputWidth - consoleWidth + (needsScrollbarY ? 1 : 0),
-  )
-
-  const maxYOffset = Math.max(
-    0,
-    consoleTableOutputHeight - consoleHeight + (needsScrollbarX ? 1 : 0),
-  )
-
-  const visibleHeight = consoleHeight - (needsScrollbarX ? 1 : 0)
+  const prevX = xOffset
+  const prevY = yOffset
+  const { maxXOffset, maxYOffset, visibleHeight } = getViewportMetrics()
 
   // Handle gg (go to top)
   if (key.name === 'g' && !key.ctrl && !key.shift) {
     if (pendingG) {
       pendingG = false
       yOffset = 0
-      render()
+      if (yOffset !== prevY) render()
       return
     }
 
@@ -101,7 +112,7 @@ ttyIn.on('keypress', (_str, key) => {
     pendingG = false
     yOffset = maxYOffset
 
-    render()
+    if (yOffset !== prevY) render()
     return
   }
 
@@ -112,21 +123,21 @@ ttyIn.on('keypress', (_str, key) => {
     // -- vertical movement --
     case 'k':
     case 'up':
-      yOffset = Math.max(0, yOffset - (key.shift ? 10 : 5))
+      moveUp(key.shift ? 10 : 5)
       break
     case 'j':
     case 'down':
-      yOffset = Math.min(maxYOffset, yOffset + (key.shift ? 10 : 5))
+      moveDown(key.shift ? 10 : 5)
       break
 
     // -- horizontal movement --
     case 'h':
     case 'left':
-      xOffset = Math.max(0, xOffset - (key.shift ? 10 : 5))
+      moveLeft(key.shift ? 10 : 5)
       break
     case 'l':
     case 'right':
-      xOffset = Math.min(maxXOffset, xOffset + (key.shift ? 10 : 5))
+      moveRight(key.shift ? 10 : 5)
       break
 
     // Ctrl+d — half page down
@@ -165,8 +176,8 @@ ttyIn.on('keypress', (_str, key) => {
       xOffset = 0
       break
     // $ — scroll to rightmost
-    case '4': // shift+4 = $
-      if (key.shift) {
+    case undefined:
+      if (key.sequence === '$') {
         xOffset = maxXOffset
       } else {
         return
@@ -177,10 +188,164 @@ ttyIn.on('keypress', (_str, key) => {
       return
   }
 
-  render()
+  if (xOffset !== prevX || yOffset !== prevY) render()
+})
+
+ttyIn.on('data', (chunk) => {
+  mouseSequenceBuffer += chunk.toString('utf8')
+  processMouseBuffer()
 })
 
 render()
+
+function processMouseBuffer() {
+  while (mouseSequenceBuffer.length) {
+    const mouseStart = mouseSequenceBuffer.indexOf('\x1b[<')
+
+    if (mouseStart === -1) {
+      mouseSequenceBuffer = mouseSequenceBuffer.endsWith('\x1b') ? '\x1b' : ''
+      return
+    }
+
+    if (mouseStart > 0) {
+      mouseSequenceBuffer = mouseSequenceBuffer.slice(mouseStart)
+    }
+
+    const match = mouseSequenceBuffer.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/)
+
+    if (!match) {
+      if (/^\x1b\[<[\d;]*$/.test(mouseSequenceBuffer)) {
+        return
+      }
+
+      mouseSequenceBuffer = mouseSequenceBuffer.slice(1)
+      continue
+    }
+
+    handleMouseButton(
+      Number.parseInt(match[1], 10),
+      /** @type {'M' | 'm'} */ (match[4]),
+    )
+    mouseSequenceBuffer = mouseSequenceBuffer.slice(match[0].length)
+  }
+}
+
+/**
+ * @param {number} buttonCode
+ * @param {'M' | 'm'} action
+ */
+function handleMouseButton(buttonCode, action) {
+  // Wheel events should be press-only. Ignore release-style reports to avoid jitter.
+  if (action !== 'M') return
+
+  if ((buttonCode & 64) === 0) return
+
+  const wheelButton = buttonCode & 3
+  const isShiftPressed = (buttonCode & 4) !== 0
+
+  let moved = false
+
+  switch (wheelButton) {
+    case 0: // wheel up
+      moved = isShiftPressed ? moveRight(5) : moveUp(5)
+      break
+    case 1: // wheel down
+      moved = isShiftPressed ? moveLeft(5) : moveDown(5)
+      break
+    case 2: // wheel right (native horizontal)
+      moved = moveRight(5)
+      break
+    case 3: // wheel left (native horizontal)
+      moved = moveLeft(5)
+      break
+    default:
+      return
+  }
+
+  if (moved) render()
+}
+
+function getViewportMetrics() {
+  const { needsScrollbarX, needsScrollbarY } = computeScrollbarVisibility()
+
+  const maxXOffset = Math.max(
+    0,
+    consoleTableOutputWidth - consoleWidth + (needsScrollbarY ? 1 : 0),
+  )
+
+  const maxYOffset = Math.max(
+    0,
+    consoleTableOutputHeight - consoleHeight + (needsScrollbarX ? 1 : 0),
+  )
+
+  const visibleHeight = consoleHeight - (needsScrollbarX ? 1 : 0)
+
+  return { maxXOffset, maxYOffset, visibleHeight }
+}
+
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
+function moveUp(amount) {
+  const prev = yOffset
+  yOffset = Math.max(0, yOffset - amount)
+  return yOffset !== prev
+}
+
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
+function moveDown(amount) {
+  const prev = yOffset
+  const { maxYOffset } = getViewportMetrics()
+  yOffset = Math.min(maxYOffset, yOffset + amount)
+  return yOffset !== prev
+}
+
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
+function moveLeft(amount) {
+  const prev = xOffset
+  xOffset = Math.max(0, xOffset - amount)
+  return xOffset !== prev
+}
+
+/**
+ * @param {number} amount
+ * @returns {boolean} whether the offset changed
+ */
+function moveRight(amount) {
+  const prev = xOffset
+  const { maxXOffset } = getViewportMetrics()
+  xOffset = Math.min(maxXOffset, xOffset + amount)
+  return xOffset !== prev
+}
+
+function enableMouseReporting() {
+  process.stdout.write('\x1B[?1000h\x1B[?1006h')
+}
+
+function disableMouseReporting() {
+  process.stdout.write('\x1B[?1000l\x1B[?1006l')
+}
+
+function cleanupTerminal() {
+  if (didCleanupTerminal) return
+
+  didCleanupTerminal = true
+
+  disableMouseReporting()
+
+  if (ttyIn.isRaw) {
+    ttyIn.setRawMode(false)
+  }
+
+  process.stdout.write('\x1B[?25h\x1B[?1049l')
+}
 
 function render() {
   console.clear()
